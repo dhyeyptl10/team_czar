@@ -20,6 +20,16 @@ export default function Panel({ page, onClose, initialAction }) {
   const historyRef = useRef(history);
   historyRef.current = history;
 
+  // ── speech recognition declared first so callbacks below can reference it ──
+  const recognition = useSpeechRecognition({
+    onTranscript: (t) => {
+      setTranscript(t);
+      const action = matchVoiceCommand(t);
+      // We forward the raw transcript; the handler resolves the proper action
+      handleVoiceCommandRef.current?.(action, t);
+    },
+  });
+
   // load conversation + reading progress for this page on mount
   useEffect(() => {
     let cancelled = false;
@@ -107,8 +117,12 @@ export default function Panel({ page, onClose, initialAction }) {
     [appendTurn, page, persist, tts, recognition.lang]
   );
 
+  const activeParagraphRef = useRef(activeParagraph);
+  activeParagraphRef.current = activeParagraph;
+
   const handleVoiceCommand = useCallback(
     (action, rawTranscript, customTarget) => {
+      const curPara = activeParagraphRef.current;
       switch (action) {
         case "read_page":
           tts.readParagraphs(page.paragraphs, { fromIndex: 0, lang: recognition.lang });
@@ -117,7 +131,7 @@ export default function Panel({ page, onClose, initialAction }) {
           runAssistant("summarize", "Summarize this page", customTarget);
           return;
         case "explain_paragraph": {
-          const idx = customTarget?.paragraphIndex ?? activeParagraph ?? 0;
+          const idx = customTarget?.paragraphIndex ?? curPara ?? 0;
           runAssistant("explain_paragraph", `Explain paragraph ${idx + 1}`, { paragraphIndex: idx });
           return;
         }
@@ -151,31 +165,31 @@ export default function Panel({ page, onClose, initialAction }) {
           runAssistant("important_points", "Read the important points", customTarget);
           return;
         case "what_does_this_mean": {
-          const idx = customTarget?.paragraphIndex ?? activeParagraph ?? 0;
+          const idx = customTarget?.paragraphIndex ?? curPara ?? 0;
           runAssistant("what_does_this_mean", rawTranscript, { paragraphIndex: idx });
           return;
         }
         case "explain_selection":
           runAssistant("explain_selection", rawTranscript, customTarget);
           return;
+        case "summarize_selection":
+          runAssistant("summarize_selection", rawTranscript, customTarget);
+          return;
         case "translate":
           runAssistant("translate", rawTranscript, customTarget);
           return;
         default:
           // no matched command — treat the utterance as a free-form question
-          runAssistant("chat", rawTranscript);
+          if (rawTranscript?.trim()) runAssistant("chat", rawTranscript);
       }
     },
-    [activeParagraph, page, runAssistant, tts, recognition.lang]
+    [page, runAssistant, tts, recognition.lang]
   );
 
-  const recognition = useSpeechRecognition({
-    onTranscript: (t) => {
-      setTranscript(t);
-      const action = matchVoiceCommand(t);
-      handleVoiceCommand(action, t);
-    },
-  });
+  // Stable ref so the speech-recognition onTranscript closure always calls the
+  // latest version of handleVoiceCommand without stale closures.
+  const handleVoiceCommandRef = useRef(handleVoiceCommand);
+  handleVoiceCommandRef.current = handleVoiceCommand;
 
   const handleToggleMic = () => (recognition.listening ? recognition.stop() : recognition.start());
 
@@ -184,14 +198,17 @@ export default function Panel({ page, onClose, initialAction }) {
     recognition.switchLanguage(nextLang);
   };
 
+  // Run the initial action (e.g. from selection toolbar) once on mount
   const initialActionRef = useRef(initialAction);
   useEffect(() => {
     if (initialActionRef.current) {
       const action = initialActionRef.current;
       initialActionRef.current = null;
-      handleVoiceCommand(action.command, action.message, action.target);
+      // Slight delay so React finishes mounting before we kick off an async request
+      setTimeout(() => handleVoiceCommand(action.command, action.message, action.target), 50);
     }
-  }, [handleVoiceCommand]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally runs once on mount only
 
   const handleSubmitTyped = (e) => {
     e.preventDefault();
@@ -225,7 +242,7 @@ export default function Panel({ page, onClose, initialAction }) {
         </button>
       </header>
 
-      {transcript && <div className="jarvis-panel__transcript">“{transcript}”</div>}
+      {transcript && <div className="jarvis-panel__transcript">"{transcript}"</div>}
 
       {paragraphPreview && (
         <div className="jarvis-panel__paragraph-preview">
@@ -234,7 +251,7 @@ export default function Panel({ page, onClose, initialAction }) {
         </div>
       )}
 
-      <ChatHistory history={history} />
+      <ChatHistory history={history} busy={busy} />
 
       {error && <div className="jarvis-panel__error">{error}</div>}
 
