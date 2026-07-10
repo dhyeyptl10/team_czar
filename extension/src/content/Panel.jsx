@@ -9,14 +9,14 @@ import { askJarvis, translateSelection } from "./lib/api";
 import { getPageState, savePageState } from "../shared/storage";
 
 export default function Panel({ page, onClose, initialAction }) {
-  const [history, setHistory]           = useState([]);
-  const [transcript, setTranscript]     = useState("");
-  const [inputValue, setInputValue]     = useState("");
-  const [busy, setBusy]                 = useState(false);
-  const [summary, setSummary]           = useState(null);
+  const [history, setHistory]                 = useState([]);
+  const [transcript, setTranscript]           = useState("");
+  const [inputValue, setInputValue]           = useState("");
+  const [busy, setBusy]                       = useState(false);
+  const [summary, setSummary]                 = useState(null);
   const [activeParagraph, setActiveParagraph] = useState(null);
-  const [error, setError]               = useState(null);
-  const [wakeFlash, setWakeFlash]       = useState(false); // brief badge on wake
+  const [error, setError]                     = useState(null);
+  const [resetDone, setResetDone]             = useState(false);
 
   const historyRef = useRef(history);
   historyRef.current = history;
@@ -28,15 +28,9 @@ export default function Panel({ page, onClose, initialAction }) {
       const action = matchVoiceCommand(t);
       handleVoiceCommandRef.current?.(action, t);
     },
-    onWakeWord: () => {
-      // Auto-activate mic on wake word; show brief badge
-      recognition.start();
-      setWakeFlash(true);
-      setTimeout(() => setWakeFlash(false), 2200);
-    },
   });
 
-  // ── Load page state from storage ──
+  // ── Load page state from storage on mount ──
   useEffect(() => {
     let cancelled = false;
     getPageState(page.url).then((state) => {
@@ -51,8 +45,8 @@ export default function Panel({ page, onClose, initialAction }) {
   const persist = useCallback(
     (patch) => {
       const next = {
-        history: patch.history ?? historyRef.current,
-        summary: patch.summary ?? summary,
+        history:         patch.history         ?? historyRef.current,
+        summary:         patch.summary         ?? summary,
         readingProgress: { paragraphIndex: patch.paragraphIndex ?? activeParagraph ?? 0 },
       };
       savePageState(page.url, next);
@@ -77,6 +71,18 @@ export default function Panel({ page, onClose, initialAction }) {
     },
     [persist]
   );
+
+  // ── Reset conversation ──
+  const handleReset = useCallback(() => {
+    tts.stop();
+    setHistory([]);
+    setSummary(null);
+    setTranscript("");
+    setError(null);
+    savePageState(page.url, { history: [], summary: null, readingProgress: { paragraphIndex: 0 } });
+    setResetDone(true);
+    setTimeout(() => setResetDone(false), 1800);
+  }, [page.url, tts]);
 
   const runAssistant = useCallback(
     async (command, message, target) => {
@@ -189,19 +195,13 @@ export default function Panel({ page, onClose, initialAction }) {
     [page, runAssistant, tts, recognition.lang]
   );
 
-  // Stable ref so recognition's onTranscript closure always uses the latest handler
   const handleVoiceCommandRef = useRef(handleVoiceCommand);
   handleVoiceCommandRef.current = handleVoiceCommand;
 
-  const handleToggleMic = () =>
-    recognition.listening ? recognition.stop() : recognition.start();
+  const handleToggleMic  = () => recognition.listening ? recognition.stop() : recognition.start();
+  const handleToggleLang = () => recognition.switchLanguage(recognition.lang === "en-US" ? "hi-IN" : "en-US");
 
-  const handleToggleLang = () => {
-    const nextLang = recognition.lang === "en-US" ? "hi-IN" : "en-US";
-    recognition.switchLanguage(nextLang);
-  };
-
-  // Run initial action (e.g. from selection toolbar) once on mount
+  // Run initial action (from selection toolbar) once on mount
   const initialActionRef = useRef(initialAction);
   useEffect(() => {
     if (initialActionRef.current) {
@@ -216,11 +216,7 @@ export default function Panel({ page, onClose, initialAction }) {
     e.preventDefault();
     if (!inputValue.trim() || busy) return;
     const action = matchVoiceCommand(inputValue.toLowerCase());
-    if (action) {
-      handleVoiceCommand(action, inputValue);
-    } else {
-      runAssistant("chat", inputValue);
-    }
+    action ? handleVoiceCommand(action, inputValue) : runAssistant("chat", inputValue);
     setInputValue("");
   };
 
@@ -231,33 +227,37 @@ export default function Panel({ page, onClose, initialAction }) {
 
   return (
     <div className="jarvis-panel" role="dialog" aria-label="Jarvis assistant">
+
       {/* ── Header ── */}
       <header className="jarvis-panel__header">
         <VoiceOrb listening={recognition.listening} speaking={tts.speaking} />
         <div className="jarvis-panel__titles">
-          <strong className="jarvis-panel__title" title={page.title}>
-            {page.title}
-          </strong>
+          <strong className="jarvis-panel__title" title={page.title}>{page.title}</strong>
           <span className="jarvis-panel__site">{page.siteName}</span>
         </div>
         <div className="jarvis-panel__header-right">
-          {wakeFlash && (
-            <span className="jarvis-panel__wake-badge" key={Date.now()}>👋 Hey Jarvis!</span>
+          {page.wordCount > 0 && (
+            <span className="jarvis-panel__word-count">
+              ~{page.wordCount.toLocaleString()} words
+            </span>
           )}
-          <span className="jarvis-panel__word-count">
-            {page.wordCount ? `~${page.wordCount.toLocaleString()} words` : ""}
-          </span>
-          <button className="jarvis-panel__close" onClick={onClose} aria-label="Close assistant">
-            ✕
+          {/* Reset conversation button */}
+          <button
+            className="jarvis-panel__reset-btn"
+            onClick={handleReset}
+            title="Reset conversation"
+            disabled={busy}
+          >
+            {resetDone ? "✓" : "↺"}
           </button>
+          <button className="jarvis-panel__close" onClick={onClose} aria-label="Close assistant">✕</button>
         </div>
       </header>
 
       {/* ── Transcript display ── */}
       {transcript && (
         <div className="jarvis-panel__transcript">
-          <span className="jarvis-panel__transcript-icon">🎙️</span>
-          "{transcript}"
+          <span>🎙️</span> "{transcript}"
         </div>
       )}
 
@@ -274,9 +274,7 @@ export default function Panel({ page, onClose, initialAction }) {
 
       {/* ── Error banner ── */}
       {error && (
-        <div className="jarvis-panel__error">
-          <span>⚠️</span> {error}
-        </div>
+        <div className="jarvis-panel__error">⚠️ {error}</div>
       )}
 
       {/* ── Input row ── */}
@@ -301,12 +299,7 @@ export default function Panel({ page, onClose, initialAction }) {
         lang={recognition.lang}
         onToggleMic={handleToggleMic}
         onToggleLang={handleToggleLang}
-        onRead={() =>
-          tts.readParagraphs(page.paragraphs, {
-            fromIndex: activeParagraph ?? 0,
-            lang: recognition.lang,
-          })
-        }
+        onRead={() => tts.readParagraphs(page.paragraphs, { fromIndex: activeParagraph ?? 0, lang: recognition.lang })}
         onPause={tts.pause}
         onResume={tts.resume}
         onStop={tts.stop}
