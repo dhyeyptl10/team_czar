@@ -19,7 +19,7 @@ import { createRoot } from "react-dom/client";
 import Panel from "./Panel";
 import SelectionToolbar from "./components/SelectionToolbar";
 import { extractPageContent } from "./lib/extractContent";
-import { askJarvis, translateSelection } from "./lib/api";
+// (api calls are handled inside Panel.jsx, not here)
 // Imported so Vite includes it in the build graph and emits dist/content.css.
 // It still only ever applies inside our Shadow DOM (loaded via a <link> tag
 // in ensureHost below), never as a global page stylesheet.
@@ -125,8 +125,8 @@ function renderToolbar(position, selectedText) {
     panelOpen = true;
     initialAction = {
       command,
-      message: command === "translate" 
-        ? `Translate: "${selectedText}"` 
+      message: command === "translate"
+        ? `Translate: "${selectedText}"`
         : command === "summarize_selection"
           ? `Summarize selection: "${selectedText}"`
           : `Explain selection: "${selectedText}"`,
