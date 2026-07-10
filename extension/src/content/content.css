@@ -102,34 +102,13 @@
 }
 .jarvis-panel__close:hover { background: rgba(255,90,90,0.2); color: #fca5a5; }
 
-/* ── Wake word badge ── */
-.jarvis-panel__wake-badge {
-  font-size: 10.5px;
-  background: linear-gradient(135deg, rgba(16,185,129,0.2), rgba(59,130,246,0.2));
-  border: 1px solid rgba(16,185,129,0.35);
-  color: #6ee7b7;
-  border-radius: 20px;
-  padding: 2px 8px;
-  animation: badge-pop 0.3s ease;
+/* ── Word count ── */
+.jarvis-panel__word-count {
+  font-size: 10px;
+  color: rgba(232,239,255,0.3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
-@keyframes badge-pop {
-  from { transform: scale(0.8); opacity: 0; }
-  to   { transform: scale(1);   opacity: 1; }
-}
-
-/* ── Wake hint bar ── */
-.jarvis-panel__wake-hint {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 5px 14px;
-  background: rgba(96,165,250,0.04);
-  border-bottom: 1px solid rgba(255,255,255,0.04);
-  font-size: 10.5px;
-  color: rgba(232,239,255,0.38);
-}
-.jarvis-panel__wake-hint strong { color: rgba(147,197,253,0.7); }
-.jarvis-panel__word-count { font-variant-numeric: tabular-nums; }
 
 /* ── Transcript display ── */
 .jarvis-panel__transcript {
@@ -372,13 +351,6 @@
 .jarvis-orb--listening .jarvis-orb__ring,
 .jarvis-orb--speaking .jarvis-orb__ring {
   animation: jarvis-pulse 1.6s ease-out infinite;
-}
-.jarvis-orb--wake .jarvis-orb__ring {
-  animation: jarvis-pulse 0.8s ease-out infinite;
-  border-color: rgba(52,211,153,0.7);
-}
-.jarvis-orb--wake .jarvis-orb__core {
-  background: radial-gradient(circle at 35% 35%, #6ee7b7, #059669);
 }
 .jarvis-orb__ring--delay { animation-delay: 0.8s !important; }
 .jarvis-orb--speaking .jarvis-orb__core {

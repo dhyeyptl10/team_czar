@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState, useCallback, useRef } from "react"
 import VoiceOrb from "./components/VoiceOrb";
 import ChatHistory from "./components/ChatHistory";
 import Controls from "./components/Controls";
-import { useSpeechRecognition, useWakeWord } from "./hooks/useSpeechRecognition";
+import { useSpeechRecognition } from "./hooks/useSpeechRecognition";
 import { useSpeechSynthesis } from "./hooks/useSpeechSynthesis";
 import { matchVoiceCommand } from "./lib/voiceCommands";
 import { askJarvis, translateSelection } from "./lib/api";
@@ -16,31 +16,16 @@ export default function Panel({ page, onClose, initialAction }) {
   const [summary, setSummary] = useState(null);
   const [activeParagraph, setActiveParagraph] = useState(null);
   const [error, setError] = useState(null);
-  const [wakeWordActive, setWakeWordActive] = useState(false);
 
   const historyRef = useRef(history);
   historyRef.current = history;
 
-  // ── Speech Recognition (declared first — used in callbacks below) ──
+  // ── Speech Recognition declared first so callbacks below can reference it ──
   const recognition = useSpeechRecognition({
     onTranscript: (t) => {
       setTranscript(t);
       const action = matchVoiceCommand(t);
       handleVoiceCommandRef.current?.(action, t);
-    },
-  });
-
-  // ── Wake Word: "Hey Jarvis" auto-activates mic ──
-  useWakeWord({
-    onWakeWord: () => {
-      setWakeWordActive(true);
-      // flash the wake indicator then auto-start mic
-      if (!recognition.listening) {
-        recognition.start();
-      }
-      // auto-greet
-      ttsRef.current?.say("Yes? I'm listening.", recognition.lang);
-      setTimeout(() => setWakeWordActive(false), 2000);
     },
   });
 
@@ -74,10 +59,6 @@ export default function Panel({ page, onClose, initialAction }) {
       persist({ paragraphIndex: i });
     },
   });
-
-  // Stable ref so wake-word callback can call tts without stale closure
-  const ttsRef = useRef(tts);
-  ttsRef.current = tts;
 
   const appendTurn = useCallback(
     (role, content) => {
@@ -201,18 +182,19 @@ export default function Panel({ page, onClose, initialAction }) {
     [page, runAssistant, tts, recognition.lang]
   );
 
-  // Stable ref so recognition's onTranscript closure always uses latest handler
+  // Stable ref so recognition's onTranscript closure always uses the latest handler
   const handleVoiceCommandRef = useRef(handleVoiceCommand);
   handleVoiceCommandRef.current = handleVoiceCommand;
 
-  const handleToggleMic = () => (recognition.listening ? recognition.stop() : recognition.start());
+  const handleToggleMic = () =>
+    recognition.listening ? recognition.stop() : recognition.start();
 
   const handleToggleLang = () => {
     const nextLang = recognition.lang === "en-US" ? "hi-IN" : "en-US";
     recognition.switchLanguage(nextLang);
   };
 
-  // Run initial action (from selection toolbar) once on mount
+  // Run initial action (e.g. from selection toolbar) once on mount
   const initialActionRef = useRef(initialAction);
   useEffect(() => {
     if (initialActionRef.current) {
@@ -244,11 +226,7 @@ export default function Panel({ page, onClose, initialAction }) {
     <div className="jarvis-panel" role="dialog" aria-label="Jarvis assistant">
       {/* ── Header ── */}
       <header className="jarvis-panel__header">
-        <VoiceOrb
-          listening={recognition.listening}
-          speaking={tts.speaking}
-          wakeActive={wakeWordActive}
-        />
+        <VoiceOrb listening={recognition.listening} speaking={tts.speaking} />
         <div className="jarvis-panel__titles">
           <strong className="jarvis-panel__title" title={page.title}>
             {page.title}
@@ -256,22 +234,14 @@ export default function Panel({ page, onClose, initialAction }) {
           <span className="jarvis-panel__site">{page.siteName}</span>
         </div>
         <div className="jarvis-panel__header-right">
-          {wakeWordActive && (
-            <span className="jarvis-panel__wake-badge">Hey Jarvis! 👋</span>
-          )}
+          <span className="jarvis-panel__word-count">
+            {page.wordCount ? `~${page.wordCount.toLocaleString()} words` : ""}
+          </span>
           <button className="jarvis-panel__close" onClick={onClose} aria-label="Close assistant">
             ✕
           </button>
         </div>
       </header>
-
-      {/* ── Wake word hint bar ── */}
-      <div className="jarvis-panel__wake-hint">
-        <span>Say <strong>"Hey Jarvis"</strong> anytime to activate</span>
-        <span className="jarvis-panel__word-count">
-          {page.wordCount ? `~${page.wordCount.toLocaleString()} words` : ""}
-        </span>
-      </div>
 
       {/* ── Transcript display ── */}
       {transcript && (
@@ -305,7 +275,7 @@ export default function Panel({ page, onClose, initialAction }) {
           type="text"
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
-          placeholder='Ask about this page or say "Hey Jarvis"…'
+          placeholder="Ask about this page…"
           disabled={busy}
         />
         <button type="submit" disabled={busy || !inputValue.trim()}>
@@ -321,7 +291,12 @@ export default function Panel({ page, onClose, initialAction }) {
         lang={recognition.lang}
         onToggleMic={handleToggleMic}
         onToggleLang={handleToggleLang}
-        onRead={() => tts.readParagraphs(page.paragraphs, { fromIndex: activeParagraph ?? 0, lang: recognition.lang })}
+        onRead={() =>
+          tts.readParagraphs(page.paragraphs, {
+            fromIndex: activeParagraph ?? 0,
+            lang: recognition.lang,
+          })
+        }
         onPause={tts.pause}
         onResume={tts.resume}
         onStop={tts.stop}

@@ -1,9 +1,9 @@
 // useSpeechRecognition.js
 //
-// Upgraded with "Hey Jarvis" wake-word detection:
-//   - A separate always-on background recognizer listens passively for "hey jarvis"
-//   - When heard, it fires onWakeWord() so the Panel can auto-enable the main mic
-//   - The main recognizer (for commands) is unchanged
+// React-ified speech recognition:
+//   - continuous + auto-restart-on-end behaviour
+//   - en-US / hi-IN language toggle stored via chrome.storage.local
+//   - onTranscript callback receives the recognized transcript
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { storageGet, storageSet } from "../../shared/storage";
@@ -12,52 +12,6 @@ const SpeechRecognitionImpl =
   typeof window !== "undefined" &&
   (window.SpeechRecognition || window.webkitSpeechRecognition);
 
-// ── Wake-word hook (always-on, low-power) ──────────────────────────────────
-export function useWakeWord({ onWakeWord } = {}) {
-  const wakeRef = useRef(null);
-  const onWakeRef = useRef(onWakeWord);
-  onWakeRef.current = onWakeWord;
-  const activeRef = useRef(false);
-
-  useEffect(() => {
-    if (!SpeechRecognitionImpl) return;
-
-    const rec = new SpeechRecognitionImpl();
-    rec.continuous = true;
-    rec.interimResults = false;
-    rec.lang = "en-US";
-    wakeRef.current = rec;
-
-    rec.onresult = (e) => {
-      const t = e.results[e.resultIndex][0].transcript.trim().toLowerCase();
-      if (t.includes("hey jarvis") || t.includes("jarvis") || t.includes("hey jarvis")) {
-        onWakeRef.current?.();
-      }
-    };
-
-    rec.onend = () => {
-      if (activeRef.current) {
-        setTimeout(() => {
-          try { rec.start(); } catch { /* already started */ }
-        }, 500);
-      }
-    };
-
-    rec.onerror = () => { /* silently ignore wake-word errors */ };
-
-    // start immediately
-    activeRef.current = true;
-    try { rec.start(); } catch { /* ignore */ }
-
-    return () => {
-      activeRef.current = false;
-      rec.onend = null;
-      try { rec.stop(); } catch { /* ignore */ }
-    };
-  }, []);
-}
-
-// ── Main command recognizer ────────────────────────────────────────────────
 export function useSpeechRecognition({ onTranscript } = {}) {
   const [listening, setListening] = useState(false);
   const [lang, setLang] = useState("en-US");
@@ -87,11 +41,11 @@ export function useSpeechRecognition({ onTranscript } = {}) {
     recognition.onresult = (event) => {
       const current = event.resultIndex;
       const transcript = event.results[current][0].transcript.trim().toLowerCase();
-      // Filter out the wake word itself so it doesn't trigger a chat command
-      if (transcript === "hey jarvis" || transcript === "jarvis") return;
       onTranscriptRef.current?.(transcript);
     };
 
+    // Auto-restart: browsers stop the recognizer periodically even in
+    // "continuous" mode, so we restart unless the user explicitly stopped it.
     recognition.onend = () => {
       setListening(false);
       if (!stoppingRef.current) {
