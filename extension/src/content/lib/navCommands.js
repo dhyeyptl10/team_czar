@@ -82,8 +82,8 @@ function resolveUrl(raw) {
     return `https://${noSpace}`;
   }
 
-  // Fallback: Google search
-  return `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
+  // No fallback here! Let it return null so it doesn't match nav_goto by accident.
+  return null;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -309,7 +309,7 @@ const NAV_PATTERNS = [
         "click on ", "click ", "tap ", "press ", "hit ", "select "
       );
       // avoid matching things like "click stop reading"
-      if (q && q.length > 1 && !["mic", "button"].includes(q)) return { target: q };
+      if (q && q.length > 1 && !["mic", "button", "stop", "pause", "resume", "summarize", "read"].includes(q)) return { target: q };
       return null;
     },
   },
@@ -372,14 +372,13 @@ const NAV_PATTERNS = [
     },
   },
 
-  // ── SEARCH (Google search for something) ──
+  // ── SEARCH (Only explicit web search actions) ──
   {
     action: "nav_search",
     test: (t) => {
       const q = after(t,
-        "search for ", "google for ", "google ", "search ",
-        "look up ", "look for ", "find me ",
-        "what is ", "who is ", "how to "
+        "google search ", "search google for ", "search the web for ",
+        "web search ", "search online for "
       );
       if (q && q.length > 1) {
         return {
@@ -391,7 +390,7 @@ const NAV_PATTERNS = [
     },
   },
 
-  // ── GOTO / NAVIGATE ── (must be last of nav commands; broadest match)
+  // ── GOTO / NAVIGATE ── (must be last of nav commands)
   {
     action: "nav_goto",
     test: (t) => {
@@ -399,7 +398,12 @@ const NAV_PATTERNS = [
         "go to ", "open ", "navigate to ", "visit ", "take me to ",
         "load ", "browse to ", "head to ", "launch ", "show me "
       );
-      if (dest && dest.length > 1) return { url: resolveUrl(dest) };
+      if (dest && dest.length > 1) {
+        const resolved = resolveUrl(dest);
+        if (resolved) {
+          return { url: resolved };
+        }
+      }
       return null;
     },
   },

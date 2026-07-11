@@ -198,10 +198,19 @@ export function useSpeechRecognition({ onTranscript, onWakeWord } = {}) {
   }, []);
 
   const switchLanguage = useCallback(async (nextLang) => {
+    const wasListening = listeningRef.current;
     listeningRef.current = false;
+    setListening(false);
     try { recognitionRef.current?.stop(); } catch { /* ignore */ }
     await storageSet({ jarvisLang: nextLang });
+    langRef.current = nextLang;
     setLang(nextLang);
+    if (wasListening) {
+      setTimeout(() => {
+        listeningRef.current = true;
+        try { recognitionRef.current?.start(); } catch { /* ignore */ }
+      }, 500);
+    }
   }, []);
 
   const toggleAlwaysOn = useCallback(async () => {

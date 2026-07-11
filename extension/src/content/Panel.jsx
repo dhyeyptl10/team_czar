@@ -9,7 +9,7 @@ import { matchNavCommand, describeNavAction } from "./lib/navCommands";
 import { executeNavCommand } from "./lib/navApi";
 import { askJarvis, translateSelection } from "./lib/api";
 import { getPageState, savePageState } from "../shared/storage";
-import { getLang } from "./lib/languages";
+import { getLang, LANGUAGES } from "./lib/languages";
 
 export default function Panel({ page, onClose, initialAction }) {
   const [history, setHistory]                 = useState([]);
@@ -29,19 +29,40 @@ export default function Panel({ page, onClose, initialAction }) {
 
   // Ref used by onWakeWord to call start() without circular dependency
   const recognitionStartRef = useRef(null);
+  const recognitionSwitchLangRef = useRef(null);
   const handleVoiceCommandRef = useRef(null);
 
   // ── Speech Recognition (declared first — used in callbacks below) ──
   const recognition = useSpeechRecognition({
     onTranscript: (t) => {
       setTranscript(t);
-      // Nav commands take priority over AI commands
-      const navMatch = matchNavCommand(t);
+      const tLow = t.toLowerCase().trim();
+
+      // ── 1. Language switching via voice ──
+      // e.g. "switch to Hindi", "change language to Spanish", "speak in French", "set language to German"
+      const langMatch = tLow.match(/(?:switch\s+to|change\s+(?:language\s+)?to|speak\s+in|set\s+language\s+to)\s+([a-zA-Z\u00C0-\u017F\s]+)/i);
+      if (langMatch) {
+        const targetLangName = langMatch[1].trim().toLowerCase();
+        const found = LANGUAGES.find(
+          (l) =>
+            l.name.toLowerCase() === targetLangName ||
+            l.nativeName.toLowerCase() === targetLangName ||
+            l.code.toLowerCase().startsWith(targetLangName)
+        );
+        if (found) {
+          recognitionSwitchLangRef.current?.(found.code);
+          setTranscript("");
+          return;
+        }
+      }
+
+      // ── 2. Nav commands take priority over AI commands ──
+      const navMatch = matchNavCommand(tLow);
       if (navMatch) {
         handleNavCommandRef.current?.(navMatch.action, navMatch.params);
         return;
       }
-      const action = matchVoiceCommand(t);
+      const action = matchVoiceCommand(tLow);
       handleVoiceCommandRef.current?.(action, t);
     },
     onWakeWord: () => {
@@ -50,8 +71,9 @@ export default function Panel({ page, onClose, initialAction }) {
     },
   });
 
-  // Wire the start function via ref (avoids closure capture issues)
+  // Wire the start and switchLanguage functions via ref (avoids closure capture issues)
   recognitionStartRef.current = recognition.start;
+  recognitionSwitchLangRef.current = recognition.switchLanguage;
 
   // ── Load page state from storage on mount ──
   useEffect(() => {

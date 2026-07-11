@@ -13,6 +13,24 @@
 
 import { useCallback, useRef, useState } from "react";
 
+function pickVoice(lang) {
+  if (!lang || typeof window === "undefined") return null;
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices.length) return null;
+
+  const langLower  = lang.toLowerCase();
+  const langPrefix = langLower.split("-")[0]; // e.g. "hi" from "hi-IN"
+
+  // 1. Exact match (e.g. "hi-IN")
+  let voice = voices.find((v) => v.lang.toLowerCase() === langLower);
+  // 2. Prefix match (e.g. any "hi-*" voice)
+  if (!voice) voice = voices.find((v) => v.lang.toLowerCase().startsWith(langPrefix));
+  // 3. First voice that contains the prefix anywhere
+  if (!voice) voice = voices.find((v) => v.lang.toLowerCase().includes(langPrefix));
+
+  return voice || null;
+}
+
 export function useSpeechSynthesis({ onParagraphChange } = {}) {
   const [speaking, setSpeaking] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -27,7 +45,11 @@ export function useSpeechSynthesis({ onParagraphChange } = {}) {
       const utter = new SpeechSynthesisUtterance();
       utter.text = text;
       utter.volume = 1;
-      if (lang) utter.lang = lang;
+      if (lang) {
+        utter.lang = lang;
+        const voice = pickVoice(lang);
+        if (voice) utter.voice = voice;
+      }
 
       utter.onstart = () => setSpeaking(true);
       utter.onend = () => {
